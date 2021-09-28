@@ -1,0 +1,59 @@
+---
+- hosts: all
+  gather_facts: no
+  vars_files:
+    - vars/main.yml
+    - vars/vault
+
+  roles:
+    - role: bastion
+      tags: [ never, bastion, ocp-install-all ]
+      when: inventory_hostname == "172.16.1.7"
+
+    - role: dhcp
+      tags: [ never, dhcp, infra, ocp-install-all ]
+      when: inventory_hostname == "192.168.10.2"
+
+    - role: dns
+      tags: [ never, dns, infra, ocp-install-all ]
+      when: inventory_hostname == "192.168.10.2"
+
+    - role: haproxy
+      tags: [ never, haproxy, infra, ocp-install-all ]
+      when: inventory_hostname == "192.168.10.2"
+
+    - role: pxe
+      tags: [ never, pxe, infra, ocp-install-all ]
+      when: inventory_hostname == "192.168.10.2"
+
+    - role: ocp-prep
+      tags: [ never, ocp-prep, infra, ocp-install-all ]
+      when: inventory_hostname == "192.168.10.2"
+
+    - role: startBootstrapVM
+      tags: [ never, startVMs, ocp-install, ocp-install-all-vm ]
+      when: inventory_hostname == "172.16.1.7"
+
+    - role: startNodeVMs
+      tags: [ never, startVMs, ocp-install, ocp-install-all-vm ]
+      when: inventory_hostname == "172.16.1.7"
+
+    - role: servers_ops
+      tags: [ never, servers_ops, ocp-install, ocp-install-all-bm ]
+      when: inventory_hostname == "localhost"
+
+    - role: ocp-post-install
+      tags: [ never, ocp-post-install, ocp-install, ocp-install-all ]
+      when: inventory_hostname == "192.168.10.2"
+
+    - role: stopBootstrap
+      tags: [ never, stopBootstrap, ocp-install, ocp-install-all ]
+      when: inventory_hostname == "172.16.1.7"
+
+    - role: ocs
+      tags: [ never, ocs, ocp-post-setup ]
+      when: inventory_hostname == "192.168.10.2"
+
+    - role: ocp-registry
+      tags: [ never, ocp-registry, ocp-post-setup ]
+      when: inventory_hostname == "192.168.10.2"

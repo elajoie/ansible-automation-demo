@@ -1,0 +1,19 @@
+---
+- name: Waiting for bootstrap to complete
+  command: "openshift-install wait-for bootstrap-complete --dir {{ ign_folder }} --log-level debug"
+  register: bootstrap_status
+  retries: 60
+  delay: 60
+  until: bootstrap_status.rc == 0
+  
+- name: Start background node approver process
+  async: 3600   #   60 minutes
+  poll: 0
+  shell: |
+    while true
+    do
+      oc --kubeconfig="{{ ign_folder }}/auth/kubeconfig" get csr --no-headers | \
+        awk '/Pending/ {print $1}' | \
+        xargs --no-run-if-empty oc --kubeconfig="{{ ign_folder }}/auth/kubeconfig" adm certificate approve
+      sleep 1
+    done

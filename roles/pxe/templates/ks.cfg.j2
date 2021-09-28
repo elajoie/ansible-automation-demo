@@ -1,0 +1,14 @@
+graphical
+lang en_US.UTF-8
+sshkey  --username=root "{{ vault_sshkey }}"
+
+keyboard us
+rootpw {{ vault_rootpasswd }}
+timezone UTC
+zerombr
+autopart --nohome
+rhsm --organization="{{ vault_orgid }}" --activation-key="{{ vault_actkey }}"
+reboot
+%packages
+@^minimal-environment
+%end

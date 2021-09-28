@@ -1,0 +1,5 @@
+---
+# tasks file for createVMs
+- name: Destroy bootstrap
+  command: "virsh destroy bootstrap"
+  ignore_errors: yes

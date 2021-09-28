@@ -1,0 +1,84 @@
+---
+# tasks file for createVMs
+- name: Install virt-install
+  dnf:
+    name: virt-install
+    state: latest
+  
+- name: Clean out old bootstrap
+  command: "virsh destroy {{ item.name }}"
+  with_items:
+    - "{{  nodes.masters  }}"
+    - "{{  nodes.workers  }}"
+  ignore_errors: yes
+
+- name: Clean out old bootstrap
+  command: "virsh undefine --nvram {{ item.name }}"
+  with_items:
+    - "{{  nodes.masters  }}"
+    - "{{  nodes.workers  }}"
+  ignore_errors: yes
+
+- name: Remove QCOWs
+  file:
+    path: "/var/lib/libvirt/images/redhat/{{ item.name }}.qcow2"
+    state: absent
+  with_items:
+    - "{{  nodes.masters  }}"
+    - "{{  nodes.workers  }}"
+  ignore_errors: yes
+
+- name: Remove OSD QCOWs
+  file:
+    path: "/var/lib/libvirt/images/redhat/{{ item.name }}-osd.qcow2"
+    state: absent
+  with_items:
+    - "{{  nodes.masters  }}"
+    - "{{  nodes.workers  }}"
+  ignore_errors: yes
+
+- name: Setup OCP Master VMs
+  command: "virt-install
+    --name {{ item.name }}
+    --disk path=/var/lib/libvirt/images/redhat/{{ item.name }}.qcow2,size=120    
+    --disk path=/var/lib/libvirt/images/redhat/{{ item.name }}-osd.qcow2,size=200
+    --ram 16384
+    --cpu host
+    --vcpus 4
+    --os-type linux
+    --os-variant rhel8.3
+    --network network=default,mac={{ item.macaddr }},portgroup='vlan-10'
+    --boot uefi
+    --pxe
+    --noautoconsole"
+  with_items:
+    - "{{  nodes.masters  }}"
+
+- name: Setup OCP Worker VMs
+  command: "virt-install
+    --name {{ item.name }}
+    --disk path=/var/lib/libvirt/images/redhat/{{ item.name }}.qcow2,size=120
+    --ram 16384
+    --cpu host
+    --vcpus 4
+    --os-type linux
+    --os-variant rhel8.3
+    --network network=default,mac={{ item.macaddr }},portgroup='vlan-10'
+    --boot uefi
+    --pxe
+    --noautoconsole"
+  with_items:
+    - "{{  nodes.workers  }}"
+
+# This is dirty but allows the restart of VMs after initialization - change time to fit your network speed
+- name: Wait for 160 sec
+  wait_for:
+    delay: 160
+    timeout: 0
+
+- name: Restart VMs
+  command: "virsh start {{ item.name }}"
+  with_items:
+    - "{{  nodes.masters  }}"
+    - "{{  nodes.workers  }}"
+...

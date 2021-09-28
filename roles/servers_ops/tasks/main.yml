@@ -1,0 +1,34 @@
+---
+- name: set network/pxe boot
+  community.general.ipmi_boot:
+    name: "{{ item.ipmi_ip }}"
+    user: "{{ ilo_user }}"
+    password: "{{ ilo_password }}"
+    bootdev: network
+  with_items:
+    - "{{ nodes.masters }}"
+    - "{{ nodes.workers }}"
+
+- name: PowerOff Servers
+  community.general.ipmi_power:
+    name: "{{ item.ipmi_ip }}"
+    user: "{{ ilo_user }}"
+    password: "{{ ilo_password }}"
+    state: off
+  with_items:
+    - "{{ nodes.masters }}"
+    - "{{ nodes.workers }}"
+
+- name: Wait 60 seconds
+  pause:
+    minutes: 1
+
+- name: PowerOn Servers
+  community.general.ipmi_power:
+    name: "{{ item.ipmi_ip }}"
+    user: "{{ ilo_user }}"
+    password: "{{ ilo_password }}"
+    state: on
+  with_items:
+    - "{{ nodes.masters }}"
+    - "{{ nodes.workers }}"

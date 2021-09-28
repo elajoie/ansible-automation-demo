@@ -1,0 +1,53 @@
+---
+# tasks file for createVMs
+- name: Install virt-install
+  dnf:
+    name: virt-install
+    state: latest
+  
+- name: Clean out old bootstrap
+  command: "virsh destroy {{ item.name }}"
+  with_items:
+    - "{{  nodes.bootstrap  }}"
+  ignore_errors: yes
+
+- name: Clean out old bootstrap
+  command: "virsh undefine --nvram {{ item.name }}"
+  with_items:
+    - "{{  nodes.bootstrap  }}"
+  ignore_errors: yes
+
+- name: Remove QCOWs
+  file:
+    path: "/var/lib/libvirt/images/redhat/{{ item.name }}.qcow2"
+    state: absent
+  with_items:
+    - "{{  nodes.bootstrap  }}"
+  ignore_errors: yes
+
+- name: Setup OCP Bootstrap VM
+  command: "virt-install
+    --name {{ item.name }}
+    --disk path=/var/lib/libvirt/images/redhat/{{ item.name }}.qcow2,size=120
+    --ram 16384
+    --cpu host
+    --vcpus 4
+    --os-type linux
+    --os-variant rhel{{ _rhel_os_variant }}
+    --network network=default,mac={{ item.macaddr }},portgroup='vlan-10'
+    --boot uefi
+    --pxe
+    --noautoconsole"
+  with_items:
+    - "{{  nodes.bootstrap  }}"
+
+# This is dirty but allows the restart of VMs after initialization - change time to fit your network speed
+- name: Wait for 160 sec
+  wait_for:
+    delay: 160
+    timeout: 0
+
+- name: Restart VM
+  command: "virsh start {{ item.name }}"
+  with_items:
+    - "{{  nodes.bootstrap  }}"

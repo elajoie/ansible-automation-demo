@@ -1,0 +1,49 @@
+---
+# tasks file for ocp-registry
+- name: Create a directory if it does not exist
+  file:
+    path: /root/.kube
+    state: directory
+
+- name: Copy kubeconfig to root defualt location for SSH
+  copy:
+    remote_src: yes
+    src: /var/www/html/ignition/auth/kubeconfig
+    dest: /root/.kube/config
+
+- name: Copy kubeconfig to root defualt location for k8s Ansible collection
+  copy:
+    remote_src: yes
+    src: /var/www/html/ignition/auth/kubeconfig
+    dest: /root/.kube/config.json
+
+- name: Configure managed storage for registry operator
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: image-registry-storage
+        namespace: openshift-image-registry
+      spec:
+        accessModes:
+        - ReadWriteMany
+        resources:
+          requests:
+            storage: 50Gi
+        storageClassName: ocs-storagecluster-cephfs
+
+- name: Configure managed storage for registry operator
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: imageregistry.operator.openshift.io/v1
+      kind: Config
+      metadata:
+        name: cluster
+      spec:
+        managementState: Managed
+        storage:
+          pvc:
+            claim:

@@ -1,0 +1,80 @@
+---
+# tasks file for bastion
+
+- name: Install virt-install
+  dnf:
+    name:
+      - virt-install
+      - libguestfs-tools
+      - python3-netaddr
+    state: latest
+  
+- name: Copy net.sh to kvm host
+  ansible.builtin.copy:
+    src: net.sh
+    dest: /root/net.sh
+
+- name: Clean out bastion
+  command: "virsh destroy {{ item.name }}"
+  with_items:
+    - "{{  nodes.bastion  }}"
+  ignore_errors: yes
+
+- name: Clean out old bastion
+  command: "virsh undefine --nvram {{ item.name }}"
+  with_items:
+    - "{{  nodes.bastion  }}"
+  ignore_errors: yes
+
+- name: Remove QCOWs
+  file:
+    path: "/var/lib/libvirt/images/redhat/{{ item.name }}.qcow2"
+    state: absent
+  with_items:
+    - "{{  nodes.bastion  }}"
+  ignore_errors: yes
+
+#QCOW is staged on hypervistor /var/lib/libvirt/images
+- name: "Copy rhel{{ _rhel_version }}.qcow2 to bastion.qcow2"
+  copy:
+    src: "/var/lib/libvirt/images/redhat/rhel{{ _rhel_version }}.qcow2"
+    dest: /var/lib/libvirt/images/redhat/bastion.qcow2
+    remote_src: yes
+
+- name: Customize bastion VM
+  command: virt-customize
+    --add /var/lib/libvirt/images/redhat/bastion.qcow2
+    --uninstall cloud-init
+    --run-command 'adduser ansible'
+    --run-command 'usermod -aG wheel ansible'
+    --firstboot '/root/net.sh'
+    --password '{{ vault_user }}':password:'{{ vault_pass }}'
+    --ssh-inject ansible:file:/home/ansible/.ssh/id_rsa.pub
+    --selinux-relabel
+    --sm-credentials '{{ vault_smuser }}:password:{{ vault_smpass }}'
+    --sm-register
+    --sm-attach auto
+    --install bash-completion
+    --hostname bastion.fudge.telenor.lab
+
+- name: Customize bastion VM
+  command: "qemu-img create -f raw /var/lib/libvirt/images/redhat/bastion_120G.qcow2 120G"
+
+- name: Setup bastion VM
+  command: "virt-resize
+    --expand /dev/sda3 /var/lib/libvirt/images/redhat/bastion.qcow2 /var/lib/libvirt/images/redhat/bastion_120G.qcow2"
+
+- name: Setup bastion VM
+  command: "virt-install
+    --name {{ item.name }}
+    --ram {{ item.vm_memory_size }}
+    --cpu host
+    --vcpus {{ item.vm_vcpu }}
+    --os-type linux
+    --os-variant rhel{{ _rhel_os_variant }}
+    --network network=default,mac={{ item.macaddr }},portgroup='vlan-10'
+    --boot uefi
+    --disk /var/lib/libvirt/images/redhat/bastion_120G.qcow2
+    --noautoconsole"
+  with_items:
+    - "{{  nodes.bastion  }}"

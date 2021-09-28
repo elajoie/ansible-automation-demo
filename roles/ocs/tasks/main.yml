@@ -1,0 +1,188 @@
+---
+- name: Create a directory if it does not exist
+  file:
+    path: /root/.kube
+    state: directory
+
+- name: Copy kubeconfig to root defualt location for SSH
+  copy:
+    remote_src: yes
+    src: /var/www/html/ignition/auth/kubeconfig
+    dest: /root/.kube/config
+
+- name: Copy kubeconfig to root defualt location for k8s Ansible collection
+  copy:
+    remote_src: yes
+    src: /var/www/html/ignition/auth/kubeconfig
+    dest: /root/.kube/config.json
+
+- name: Setup Bash Completion
+  command: "oc completion bash"
+  register: bash
+
+- name: Copy bash completion to file location
+  copy:
+    content: '{{ bash.stdout }}'
+    dest: /etc/bash_completion.d/oc_completion
+
+- name: Add repository
+  yum_repository:
+    name: epel
+    description: EPEL YUM repo
+    baseurl: https://download.fedoraproject.org/pub/epel/$releasever/Everything/$basearch/
+    gpgcheck: no
+
+- name: Install required packages
+  dnf:
+    name: python3-openshift
+    state: latest
+
+- name: Create OCS namespace from template
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'namespace_openshift-storage.yml.j2') }}"
+#    template: 'namespace_openshift-storage.yml.j2'
+
+- name: Create local storage namespace from template
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'namespace_local-storage.yml.j2') }}"
+#    template: 'namespace_local-storage.yml.j2'
+
+- name: Label three nodes used for OSD nodes
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Node
+      metadata:
+        name: "{{ item.name }}.{{ baseName }}.{{ baseDomain }}"
+        labels:
+          cluster.ocs.openshift.io/openshift-storage: ""
+  with_items:
+    - "{{ nodes.storage }}"
+
+- name: Create OperatorGroup for local-storage operator
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: operators.coreos.com/v1
+      kind: OperatorGroup
+      metadata:
+        name: local-operator-group
+        namespace: openshift-local-storage
+      spec:
+        targetNamespaces:
+        - openshift-local-storage
+
+- name: Install openshift-local-storage operator
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: operators.coreos.com/v1alpha1
+      kind: Subscription
+      metadata:
+        name: local-storage-operator
+        namespace: openshift-local-storage
+      spec:
+        installPlanApproval: Automatic
+        name: local-storage-operator
+        source: redhat-operators
+        sourceNamespace: openshift-marketplace
+
+# This is dirty but allows the restart of VMs after initialization - change time to fit your network speed
+- name: Wait for 60 sec
+  wait_for:
+    delay: 60
+    timeout: 0
+
+- name: Add disks to local storage
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'localvolume.yml.j2') }}"
+#    template: 'localvolume.yml.j2'
+
+- name: Create OperatorGroup for openshift-storage operator
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: operators.coreos.com/v1
+      kind: OperatorGroup
+      metadata:
+        name: openshift-storage-operatorgroup
+        namespace: openshift-storage
+      spec:
+        targetNamespaces:
+        - openshift-storage
+
+# You only need this play if the operator is not showing up in the catalog
+#- name: Create CatalogSource for openshift-storage operator
+#  kubernetes.core.k8s:
+#    state: present
+#    definition:
+#      apiVersion: operators.coreos.com/v1alpha1
+#      kind: CatalogSource
+#      metadata:
+#        name: ocs-catalogsource
+#        namespace: openshift-marketplace
+#      spec:
+#        displayName: OpenShift Container Storage
+#        icon:
+#          base64data: PHN2ZyBpZD0iTGF5ZXJfMSIgZGF0YS1uYW1lPSJMYXllciAxIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIgMTQ1Ij48ZGVmcz48c3R5bGU+LmNscy0xe2ZpbGw6I2UwMDt9PC9zdHlsZT48L2RlZnM+PHRpdGxlPlJlZEhhdC1Mb2dvLUhhdC1Db2xvcjwvdGl0bGU+PHBhdGggZD0iTTE1Ny43Nyw2Mi42MWExNCwxNCwwLDAsMSwuMzEsMy40MmMwLDE0Ljg4LTE4LjEsMTcuNDYtMzAuNjEsMTcuNDZDNzguODMsODMuNDksNDIuNTMsNTMuMjYsNDIuNTMsNDRhNi40Myw2LjQzLDAsMCwxLC4yMi0xLjk0bC0zLjY2LDkuMDZhMTguNDUsMTguNDUsMCwwLDAtMS41MSw3LjMzYzAsMTguMTEsNDEsNDUuNDgsODcuNzQsNDUuNDgsMjAuNjksMCwzNi40My03Ljc2LDM2LjQzLTIxLjc3LDAtMS4wOCwwLTEuOTQtMS43My0xMC4xM1oiLz48cGF0aCBjbGFzcz0iY2xzLTEiIGQ9Ik0xMjcuNDcsODMuNDljMTIuNTEsMCwzMC42MS0yLjU4LDMwLjYxLTE3LjQ2YTE0LDE0LDAsMCwwLS4zMS0zLjQybC03LjQ1LTMyLjM2Yy0xLjcyLTcuMTItMy4yMy0xMC4zNS0xNS43My0xNi42QzEyNC44OSw4LjY5LDEwMy43Ni41LDk3LjUxLjUsOTEuNjkuNSw5MCw4LDgzLjA2LDhjLTYuNjgsMC0xMS42NC01LjYtMTcuODktNS42LTYsMC05LjkxLDQuMDktMTIuOTMsMTIuNSwwLDAtOC40MSwyMy43Mi05LjQ5LDI3LjE2QTYuNDMsNi40MywwLDAsMCw0Mi41Myw0NGMwLDkuMjIsMzYuMywzOS40NSw4NC45NCwzOS40NU0xNjAsNzIuMDdjMS43Myw4LjE5LDEuNzMsOS4wNSwxLjczLDEwLjEzLDAsMTQtMTUuNzQsMjEuNzctMzYuNDMsMjEuNzdDNzguNTQsMTA0LDM3LjU4LDc2LjYsMzcuNTgsNTguNDlhMTguNDUsMTguNDUsMCwwLDEsMS41MS03LjMzQzIyLjI3LDUyLC41LDU1LC41LDc0LjIyYzAsMzEuNDgsNzQuNTksNzAuMjgsMTMzLjY1LDcwLjI4LDQ1LjI4LDAsNTYuNy0yMC40OCw1Ni43LTM2LjY1LDAtMTIuNzItMTEtMjcuMTYtMzAuODMtMzUuNzgiLz48L3N2Zz4=
+#          mediatype: image/svg+xml
+#        image: quay.io/ocs-dev/ocs-registry:latest
+#        publisher: Red Hat
+#        sourceType: grpc
+
+- name: Install OpenShift-storage operator
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: operators.coreos.com/v1alpha1
+      kind: Subscription
+      metadata:
+        name: ocs-operator
+        namespace: openshift-storage
+      spec:
+        channel: stable-4.6
+        config:
+          resources: {}
+        name: ocs-operator
+        source: redhat-operators
+        sourceNamespace: openshift-marketplace
+
+# This is dirty but allows the restart of VMs after initialization - change time to fit your network speed
+- name: Wait for 160 sec
+  wait_for:
+    delay: 160
+    timeout: 0
+
+- name: Set up OpenShift-storage operator disk storage mapping
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: ocs.openshift.io/v1
+      kind: StorageCluster
+      metadata:
+        name: ocs-storagecluster
+        namespace: openshift-storage
+      spec:
+        manageNodes: false
+        monDataDirHostPath: /var/lib/rook
+        storageDeviceSets:
+        - count: 1
+          dataPVCTemplate:
+            spec:
+              accessModes:
+              - ReadWriteOnce
+              resources:
+                requests:
+                  storage: 2500G
+              storageClassName: 'localblock'
+              volumeMode: Block
+          name: ocs-deviceset
+          placement: {}
+          portable: false
+          replica: 3
+          resources: {}
+...
