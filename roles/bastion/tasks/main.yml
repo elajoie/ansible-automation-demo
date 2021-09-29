@@ -55,7 +55,7 @@
     --sm-register
     --sm-attach auto
     --install bash-completion
-    --hostname bastion.fudge.telenor.lab
+    --hostname bastion.demo.lajoie.de
 
 - name: Customize bastion VM
   command: "qemu-img create -f raw /var/lib/libvirt/images/redhat/bastion_120G.qcow2 120G"
